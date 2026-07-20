@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Compilador de CSV</title>
+
+<style>
+
+body{
+    font-family:Arial;
+    margin:40px;
+    background:#f4f4f4;
+}
+
+.box{
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    max-width:700px;
+    margin:auto;
+    box-shadow:0 0 10px rgba(0,0,0,.15);
+}
+
+button{
+    padding:10px 20px;
+    font-size:16px;
+    cursor:pointer;
+}
+
+</style>
+
+</head>
+<body>
+
+<div class="box">
+
+<h2>Compilar CSV</h2>
+
+<p>Selecione quantos arquivos desejar.</p>
+
+<input type="file" id="files" multiple accept=".csv">
+
+<br><br>
+
+<label>
+<input type="checkbox" id="origem">
+Adicionar coluna Arquivo_Origem
+</label>
+
+<br><br>
+
+<button onclick="compilar()">
+Compilar
+</button>
+
+</div>
+
+<script>
+
+async function compilar(){
+
+    const arquivos=document.getElementById("files").files;
+
+    if(arquivos.length==0){
+        alert("Selecione arquivos.");
+        return;
+    }
+
+    let linhas=[];
+    let cabecalho="";
+    let separador=",";
+
+    const incluirOrigem=document.getElementById("origem").checked;
+
+    for(let i=0;i<arquivos.length;i++){
+
+        const texto=await arquivos[i].text();
+
+        const todasLinhas=texto
+            .replace(/\r/g,"")
+            .split("\n")
+            .filter(x=>x.trim()!="");
+
+        if(i==0){
+
+            separador=todasLinhas[0].includes(";") ? ";" : ",";
+
+            cabecalho=todasLinhas[0];
+
+            if(incluirOrigem)
+                cabecalho+=separador+"Arquivo_Origem";
+
+            linhas.push(cabecalho);
+        }
+
+        for(let j=1;j<todasLinhas.length;j++){
+
+            let linha=todasLinhas[j];
+
+            if(incluirOrigem)
+                linha+=separador+arquivos[i].name;
+
+            linhas.push(linha);
+        }
+
+    }
+
+    const csv=linhas.join("\n");
+
+    const blob=new Blob([csv],{
+        type:"text/csv;charset=utf-8;"
+    });
+
+    const url=URL.createObjectURL(blob);
+
+    const a=document.createElement("a");
+
+    a.href=url;
+    a.download="CSV_COMPILADO.csv";
+
+    a.click();
+
+    URL.revokeObjectURL(url);
+
+}
+
+</script>
+
+</body>
+</html>
