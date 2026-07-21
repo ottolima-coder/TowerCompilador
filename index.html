@@ -2,7 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Compilador de CSV</title>
+<title>Compilador de Planilhas</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <style>
 body{
     font-family:Arial;
@@ -49,13 +50,18 @@ button{
 button:hover{
     background:#2ea043;
 }
+.aviso{
+    color:#f85149;
+    font-size:13px;
+    margin-top:10px;
+}
 </style>
 </head>
 <body>
 <div class="box">
-<h2>Compilar CSV</h2>
-<p>Selecione quantos arquivos desejar.</p>
-<input type="file" id="files" multiple accept=".csv">
+<h2>Compilar Planilhas</h2>
+<p>Selecione arquivos CSV, Excel (.xlsx/.xls) ou TSV, em qualquer combinação.</p>
+<input type="file" id="files" multiple accept=".csv,.xlsx,.xls,.tsv">
 <br><br>
 <label>
 <input type="checkbox" id="origem">
@@ -65,46 +71,103 @@ Adicionar coluna Arquivo_Origem
 <button onclick="compilar()">
 Compilar
 </button>
+<div id="avisos"></div>
 </div>
 <script>
+async function lerComoLinhas(arquivo){
+    const nome = arquivo.name.toLowerCase();
+
+    if(nome.endsWith(".xlsx") || nome.endsWith(".xls")){
+        const buffer = await arquivo.arrayBuffer();
+        const workbook = XLSX.read(buffer, {type:"array"});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const linhasArray = XLSX.utils.sheet_to_json(sheet, {header:1, raw:false, defval:""});
+        const separador = ",";
+        const linhasTexto = linhasArray
+            .filter(linha => linha.some(c => String(c).trim() !== ""))
+            .map(linha => linha.map(c => escaparCampo(String(c), separador)).join(separador));
+        return {linhas: linhasTexto, separador};
+    }
+
+    const texto = await arquivo.text();
+    const separador = nome.endsWith(".tsv") ? "\t" : (texto.split("\n")[0].includes(";") ? ";" : ",");
+    const linhas = texto
+        .replace(/\r/g,"")
+        .split("\n")
+        .filter(x => x.trim() !== "");
+    return {linhas, separador};
+}
+
+function escaparCampo(valor, separador){
+    if(valor.includes(separador) || valor.includes('"') || valor.includes("\n")){
+        return '"' + valor.replace(/"/g,'""') + '"';
+    }
+    return valor;
+}
+
 async function compilar(){
-    const arquivos=document.getElementById("files").files;
-    if(arquivos.length==0){
+    const arquivos = document.getElementById("files").files;
+    const avisosDiv = document.getElementById("avisos");
+    avisosDiv.innerHTML = "";
+
+    if(arquivos.length === 0){
         alert("Selecione arquivos.");
         return;
     }
-    let linhas=[];
-    let cabecalho="";
-    let separador=",";
-    const incluirOrigem=document.getElementById("origem").checked;
-    for(let i=0;i<arquivos.length;i++){
-        const texto=await arquivos[i].text();
-        const todasLinhas=texto
-            .replace(/\r/g,"")
-            .split("\n")
-            .filter(x=>x.trim()!="");
-        if(i==0){
-            separador=todasLinhas[0].includes(";") ? ";" : ",";
-            cabecalho=todasLinhas[0];
-            if(incluirOrigem)
-                cabecalho+=separador+"Arquivo_Origem";
-            linhas.push(cabecalho);
+
+    const incluirOrigem = document.getElementById("origem").checked;
+    let linhasFinais = [];
+    let separadorPrincipal = ",";
+    let cabecalhoDefinido = false;
+    const avisos = [];
+
+    for(let i = 0; i < arquivos.length; i++){
+        const arquivo = arquivos[i];
+        const extensao = arquivo.name.split(".").pop().toLowerCase();
+
+        if(!["csv","xlsx","xls","tsv"].includes(extensao)){
+            avisos.push(`⚠️ "${arquivo.name}" foi ignorado (formato .${extensao} não suportado).`);
+            continue;
         }
-        for(let j=1;j<todasLinhas.length;j++){
-            let linha=todasLinhas[j];
-            if(incluirOrigem)
-                linha+=separador+arquivos[i].name;
-            linhas.push(linha);
+
+        let resultado;
+        try{
+            resultado = await lerComoLinhas(arquivo);
+        }catch(erro){
+            avisos.push(`⚠️ Não foi possível ler "${arquivo.name}".`);
+            continue;
+        }
+
+        if(!cabecalhoDefinido){
+            separadorPrincipal = resultado.separador;
+            let cabecalho = resultado.linhas[0];
+            if(incluirOrigem) cabecalho += separadorPrincipal + "Arquivo_Origem";
+            linhasFinais.push(cabecalho);
+            cabecalhoDefinido = true;
+        }
+
+        for(let j = 1; j < resultado.linhas.length; j++){
+            let linha = resultado.linhas[j];
+            if(incluirOrigem) linha += separadorPrincipal + arquivo.name;
+            linhasFinais.push(linha);
         }
     }
-    const csv=linhas.join("\n");
-    const blob=new Blob([csv],{
-        type:"text/csv;charset=utf-8;"
-    });
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download="CSV_COMPILADO.csv";
+
+    if(avisos.length > 0){
+        avisosDiv.innerHTML = avisos.join("<br>");
+    }
+
+    if(linhasFinais.length === 0){
+        alert("Nenhum arquivo válido foi processado.");
+        return;
+    }
+
+    const csv = linhasFinais.join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "COMPILADO.csv";
     a.click();
     URL.revokeObjectURL(url);
 }
